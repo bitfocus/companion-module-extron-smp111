@@ -1,0 +1,19 @@
+{
+	"name": "extron-smp111",
+	"version": "1.0.0",
+	"api_version": "1.0.0",
+	"keywords": [
+		"Stream",
+		"Recording"
+	],
+	"manufacturer": "Extron",
+	"product": "SMP-111",
+	"shortname": "SMP",
+	"description": "SMP-111 plugin for Companion",
+	"main": "index.js",
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"author": "Nigel Brown <eventreplay@outlook.com>",
+	"license": "MIT"
+}
