@@ -36,8 +36,8 @@ instance.prototype.incomingData = function(data) {
 	}
 
 	if (self.login === false && data.match("Password:")) {
-		self.status(self.STATUS_WARNING,'Logging in');
-		self.socket.write(""+ "\n");
+		self.log('error', "expected no password");
+		self.status(self.STATUS_ERROR, 'expected no password');
 	}
 
 	// Match expected response from unit.
@@ -45,10 +45,6 @@ instance.prototype.incomingData = function(data) {
 		self.login = true;
 		self.status(self.STATUS_OK);
 		debug("logged in");
-	}
-	else if (self.login === false && data.match('login incorrect')) {
-		self.log('error', "incorrect username/password (expected no password)");
-		self.status(self.STATUS_ERROR, 'Incorrect user/pass');
 	}
 	// Heatbeat to keep connection alive
 	function heartbeat() {
