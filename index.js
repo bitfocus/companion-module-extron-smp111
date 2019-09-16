@@ -160,7 +160,7 @@ instance.prototype.destroy = function() {
 		self.socket.destroy();
 	}
 
-	debug("destroy", self.id);;
+	debug("destroy", self.id);
 };
 
 instance.prototype.actions = function(system) {
