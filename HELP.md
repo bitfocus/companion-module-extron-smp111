@@ -13,5 +13,7 @@
 * **Stop Recording** Stop a recording
 * **Pause Recording** Pause a recording
 * **Mark Recording** Mark a recording
+* **Enable RTMP Push Stream** Start streaming
+* **Disable RTMP Push Stream** Stop streaming
 
 > .
