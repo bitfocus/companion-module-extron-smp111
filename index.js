@@ -193,6 +193,20 @@ instance.prototype.actions = function(system) {
 					label: 'mark record',
 					id: 'mark_rec',
 			}]
+		},
+		'rtmp_on': {
+			label: 'RTMP On',
+			options: [{
+					label: 'rtmp on',
+					id: 'rtmp_on',
+			}]
+		},
+		'rtmp_off': {
+			label: 'RTMP Off',
+			options: [{
+					label: 'rtmp off',
+					id: 'rtmp_off',
+			}]
 		}
 	};
 
@@ -221,6 +235,14 @@ instance.prototype.action = function(action) {
 
 		case 'mark_rec':
 			cmd = "\x1BBRCDR";
+			break;
+
+		case 'rtmp_on':
+			cmd = "\x1BE1*1RTMP";
+			break;
+
+		case 'rtmp_off':
+			cmd = "\x1BE1*0RTMP";
 			break;
 	}
 
