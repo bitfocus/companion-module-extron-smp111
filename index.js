@@ -25,6 +25,18 @@ instance.prototype.updateConfig = function(config) {
 	self.init_tcp();
 };
 
+instance.prototype.init = function() {
+	var self = this;
+
+	debug = self.debug;
+	log = self.log;
+
+	self.states = {}
+	self.init_feedbacks()
+
+	self.init_tcp();
+};
+
 instance.prototype.incomingData = function(data) {
 	var self = this;
 	debug(data);
@@ -32,6 +44,7 @@ instance.prototype.incomingData = function(data) {
 	// Match part of the copyright response from unit when a connection is made.
 	if (self.login === false && data.match("Extron Electronics")) {
 		self.status(self.STATUS_WARNING,'Logging in');
+		self.socket.write("\x1B3CV"+ "\r"); // Set Verbose mode to 3
 		self.socket.write("2I"+ "\n"); // Query model description
 	}
 
@@ -58,19 +71,24 @@ instance.prototype.incomingData = function(data) {
 		var beat_period = 180; // Seconds
 		self.heartbeat_interval = setInterval(heartbeat, beat_period * 1000);
 	}
+	// Match recording state change expected response from unit.
+	if (self.login === true && data.match(/RcdrY\d+/)) {
+		self.states['record_bg'] = parseInt(data.match(/RcdrY(\d+)/)[1]);
+		self.checkFeedbacks('record_bg');
+		debug("recording change");
+		}
+	// Match stream state change expected response from unit.
+	if (self.login === true && data.match(/RtmpE1\*\d+/)) {
+		self.states['rtmp_push_bg'] = parseInt(data.match(/RtmpE1\*(\d+)/)[1]);
+		self.checkFeedbacks('rtmp_push_bg');
+		debug("stream change");
+	}
+
 	else {
 		debug("data nologin", data);
 	}
 };
 
-instance.prototype.init = function() {
-	var self = this;
-
-	debug = self.debug;
-	log = self.log;
-
-	self.init_tcp();
-};
 
 instance.prototype.init_tcp = function() {
 	var self = this;
@@ -94,16 +112,11 @@ instance.prototype.init_tcp = function() {
 		self.socket.on('error', function (err) {
 			debug("Network error", err);
 			self.log('error',"Network error: " + err.message);
+			self.login = false;
 		});
 
 		self.socket.on('connect', function () {
 			debug("Connected");
-			self.login = false;
-		});
-
-		self.socket.on('error', function (err) {
-			debug("Network error", err);
-			self.log('error',"Network error: " + err.message);
 			self.login = false;
 		});
 
@@ -127,6 +140,16 @@ instance.prototype.init_tcp = function() {
 	}
 };
 
+instance.prototype.CHOICES_RECORD = [
+	{ label: 'STOP', id: '0' },
+	{ label: 'START', id: '1' },
+	{ label: 'PAUSE', id: '2' }
+]
+
+instance.prototype.CHOICES_ONOFF = [
+	{ label: 'OFF', id: '0' },
+	{ label: 'ON', id: '1'}
+]
 
 // Return config fields for web config
 instance.prototype.config_fields = function () {
@@ -160,8 +183,86 @@ instance.prototype.destroy = function() {
 		self.socket.destroy();
 	}
 
+	self.states = {}
+
 	debug("destroy", self.id);
 };
+
+instance.prototype.init_feedbacks = function () {
+	var self = this
+	var feedbacks = {}
+
+	feedbacks['record_bg'] = {
+		label: 'Change colors for Record state',
+		description: 'If Record state specified is in use, change colors of the bank',
+		options: [
+			{
+				type: 'colorpicker',
+				label: 'Foreground color',
+				id: 'fg',
+				default: self.rgb(255, 255, 255)
+			},
+			{
+				type: 'colorpicker',
+				label: 'Background color',
+				id: 'bg',
+				default: self.rgb(0, 255, 0)
+			},
+			{
+				type: 'dropdown',
+				label: 'record',
+				id: 'record',
+				default: 1,
+				choices: self.CHOICES_RECORD
+			}
+		]
+	}
+
+	feedbacks['rtmp_push_bg'] = {
+		label: 'Change colors for RTMP Push Options',
+		description: 'If RTMP Push Stream in use, change colors of the bank',
+		options: [
+			{
+				type: 'colorpicker',
+				label: 'Foreground color',
+				id: 'fg',
+				default: self.rgb(255, 255, 255)
+			},
+			{
+				type: 'colorpicker',
+				label: 'Background color',
+				id: 'bg',
+				default: self.rgb(0, 255, 0)
+			},
+			{
+				type: 'dropdown',
+				label: 'rtmp_push',
+				id: 'rtmp_push',
+				default: 1,
+				choices: self.CHOICES_ONOFF
+			}
+		]
+	}
+	self.setFeedbackDefinitions(feedbacks)
+}
+
+instance.prototype.feedback = function (feedback, bank) {
+	var self = this
+
+	if (feedback.type === 'record_bg') {
+		if (self.states['record_bg'] === parseInt(feedback.options.record)) {
+			return { color: feedback.options.fg, bgcolor: feedback.options.bg }
+		}
+	}
+
+	if (feedback.type === 'rtmp_push_bg') {
+		if (self.states['rtmp_push_bg'] === parseInt(feedback.options.rtmp_push)) {
+			return { color: feedback.options.fg, bgcolor: feedback.options.bg }
+		}
+	}
+
+	return {}
+}
 
 instance.prototype.actions = function(system) {
 	var self = this;
@@ -194,18 +295,18 @@ instance.prototype.actions = function(system) {
 					id: 'mark_rec',
 			}]
 		},
-		'rtmp_on': {
-			label: 'RTMP On',
-			options: [{
-					label: 'rtmp on',
-					id: 'rtmp_on',
-			}]
-		},
 		'rtmp_off': {
 			label: 'RTMP Off',
 			options: [{
 					label: 'rtmp off',
 					id: 'rtmp_off',
+			}]
+		},
+		'rtmp_on': {
+			label: 'RTMP On',
+			options: [{
+					label: 'rtmp on',
+					id: 'rtmp_on',
 			}]
 		}
 	};
@@ -237,12 +338,12 @@ instance.prototype.action = function(action) {
 			cmd = "\x1BBRCDR";
 			break;
 
-		case 'rtmp_on':
-			cmd = "\x1BE1*1RTMP";
-			break;
-
 		case 'rtmp_off':
 			cmd = "\x1BE1*0RTMP";
+			break;
+
+		case 'rtmp_on':
+			cmd = "\x1BE1*1RTMP";
 			break;
 	}
 
