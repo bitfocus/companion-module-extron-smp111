@@ -16,4 +16,8 @@
 * **Enable RTMP Push Stream** Start streaming
 * **Disable RTMP Push Stream** Stop streaming
 
+## Supported feedback
+
+* **Recording** Start/Stop/Pause
+* **RTMP Stream** On/Off
 > .
