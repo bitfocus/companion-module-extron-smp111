@@ -31,8 +31,8 @@ instance.prototype.init = function() {
 	debug = self.debug;
 	log = self.log;
 
-	self.states = {}
-	self.init_feedbacks()
+	self.states = {};
+	self.init_feedbacks();
 
 	self.init_tcp();
 };
@@ -44,8 +44,8 @@ instance.prototype.incomingData = function(data) {
 	// Match part of the copyright response from unit when a connection is made.
 	if (self.login === false && data.match("Extron Electronics")) {
 		self.status(self.STATUS_WARNING,'Logging in');
-		self.socket.write("\x1B3CV"+ "\r"); // Set Verbose mode to 3
-		self.socket.write("2I"+ "\n"); // Query model description
+		self.socket.write("\x1B3CV\r"); // Set Verbose mode to 3
+		self.socket.write("2I\n"); // Query model description
 	}
 
 	if (self.login === false && data.match("Password:")) {
@@ -54,7 +54,7 @@ instance.prototype.incomingData = function(data) {
 	}
 
 	// Match expected response from unit.
-	else if (self.login === false && data.match("Streaming")) {
+	else if (self.login === false && data.match(/Streaming/)) {
 		self.login = true;
 		self.status(self.STATUS_OK);
 		debug("logged in");
@@ -63,12 +63,12 @@ instance.prototype.incomingData = function(data) {
 	function heartbeat() {
 		self.login = false;
 		self.status(self.STATUS_WARNING,'Checking Connection');
-		self.socket.write("2I"+ "\n"); // should respond with model description eg: "Streaming Media Processor"
+		self.socket.write("2I\n"); // should respond with model description eg: "Streaming Media Processor"
 		debug("Checking Connection");
 		}
 	if (self.login === true) {
 		clearInterval(self.heartbeat_interval);
-		var beat_period = 180; // Seconds
+		var beat_period = 60; // Seconds
 		self.heartbeat_interval = setInterval(heartbeat, beat_period * 1000);
 	}
 	// Match recording state change expected response from unit.
@@ -92,7 +92,6 @@ instance.prototype.incomingData = function(data) {
 
 instance.prototype.init_tcp = function() {
 	var self = this;
-	var receivebuffer = '';
 
 	if (self.socket !== undefined) {
 		self.socket.destroy();
@@ -129,12 +128,12 @@ instance.prototype.init_tcp = function() {
 		self.socket.on("iac", function(type, info) {
 			// tell remote we WONT do anything we're asked to DO
 			if (type == 'DO') {
-				socket.write(new Buffer([ 255, 252, info ]));
+				self.socket.write(new Buffer([ 255, 252, info ]));
 			}
 
 			// tell the remote DONT do whatever they WILL offer
 			if (type == 'WILL') {
-				socket.write(new Buffer([ 255, 254, info ]));
+				self.socket.write(new Buffer([ 255, 254, info ]));
 			}
 		});
 	}
@@ -142,7 +141,7 @@ instance.prototype.init_tcp = function() {
 
 instance.prototype.CHOICES_RECORD = [
 	{ label: 'STOP', id: '0' },
-	{ label: 'START', id: '1' },
+	{ label: 'RECORD', id: '1' },
 	{ label: 'PAUSE', id: '2' }
 ]
 
@@ -183,7 +182,7 @@ instance.prototype.destroy = function() {
 		self.socket.destroy();
 	}
 
-	self.states = {}
+	self.states = {};
 
 	debug("destroy", self.id);
 };
@@ -345,13 +344,6 @@ instance.prototype.action = function(action) {
 		case 'rtmp_on':
 			cmd = "\x1BE1*1RTMP";
 			break;
-	}
-
-	if (cmd !== undefined) {
-			if (self.tcp !== undefined) {
-					debug('sending ', cmd, "to", self.tcp.host);
-					self.tcp.send(cmd);
-			}
 	}
 
 	if (cmd !== undefined) {
