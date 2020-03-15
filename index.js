@@ -33,7 +33,7 @@ instance.prototype.init = function() {
 
 	self.states = {};
 	self.init_feedbacks();
-
+	self.init_variables();
 	self.init_tcp();
 };
 
@@ -49,13 +49,26 @@ instance.prototype.incomingData = function(data) {
 	}
 
 	if (self.login === false && data.match("Password:")) {
-		self.log('error', "expected no password");
-		self.status(self.STATUS_ERROR, 'expected no password');
+		self.status(self.STATUS_WARNING,'Logging in');
+		self.socket.write("\r" +self.config.password+ "\r"); // Enter Password Set
 	}
 
+	// Match login sucess response from unit.
+	else if (self.login === false && data.match(/Login/)) {
+		self.login = true;
+		self.socket.write("\x1B3CV\r"); // Set Verbose mode to 3
+		self.socket.write("\x1BYRCDR\n"); // Request Record Status
+		self.socket.write("\x1BE1RTMP\n"); // Request RTMPStream Status
+		self.socket.write("36I\n");
+		self.status(self.STATUS_OK);
+		debug("logged in");
+	}
 	// Match expected response from unit.
 	else if (self.login === false && data.match(/Streaming/)) {
 		self.login = true;
+		self.socket.write("\x1BYRCDR\n"); // Request Record Status
+		self.socket.write("\x1BE1RTMP\n"); // Request RTMPStream Status
+		self.socket.write("36I\n");
 		self.status(self.STATUS_OK);
 		debug("logged in");
 	}
@@ -68,7 +81,7 @@ instance.prototype.incomingData = function(data) {
 		}
 	if (self.login === true) {
 		clearInterval(self.heartbeat_interval);
-		var beat_period = 60; // Seconds
+		var beat_period = 5; // Seconds
 		self.heartbeat_interval = setInterval(heartbeat, beat_period * 1000);
 	}
 	// Match recording state change expected response from unit.
@@ -76,9 +89,28 @@ instance.prototype.incomingData = function(data) {
 		self.states['record_bg'] = parseInt(data.match(/RcdrY(\d+)/)[1]);
 		self.checkFeedbacks('record_bg');
 		debug("recording change");
+		if (self.states['record_bg'] === 2) {
+			self.recordStatus = 'Pasued';
 		}
+		else if (self.states['record_bg'] === 1) {
+			self.recordStatus = 'Recording';
+		}
+		else if (self.states['record_bg'] === 0) {
+			self.recordStatus = 'Stopped';
+		}
+		else {
+			self.recordStatus= 'Updating';
+		}
+		self.setVariable('recordStatus', self.recordStatus);
+	}
+	else if (self.login === true && data.match(/^Inf36.+/)) {
+		self.states['time_remain'] = data.slice(15, -5);
+		debug("time change", data);
+		self.timeRemain = self.states['time_remain']
+		self.setVariable('timeRemain', self.timeRemain);
+	}
 	// Match stream state change expected response from unit.
-	if (self.login === true && data.match(/RtmpE1\*\d+/)) {
+   	if (self.login === true && data.match(/RtmpE1\*\d+/)) {
 		self.states['rtmp_push_bg'] = parseInt(data.match(/RtmpE1\*(\d+)/)[1]);
 		self.checkFeedbacks('rtmp_push_bg');
 		debug("stream change");
@@ -139,16 +171,25 @@ instance.prototype.init_tcp = function() {
 	}
 };
 
+instance.prototype.CHOICES_CHANNEL = [
+	{ label: 'RECORD', id: '1' },
+	{ label: 'STREAM', id: '2' }
+]
+instance.prototype.CHOICES_ONOFF = [
+	{ label: 'OFF', id: '0' },
+	{ label: 'ON', id: '1' }
+]
+instance.prototype.CHOICES_PRESET = [
+	{ label: 'Input preset', id: '2' },
+	{ label: 'Stream preset', id: '3' },
+	{ label: 'Encoder preset', id: '4' }
+]
 instance.prototype.CHOICES_RECORD = [
 	{ label: 'STOP', id: '0' },
 	{ label: 'RECORD', id: '1' },
 	{ label: 'PAUSE', id: '2' }
 ]
 
-instance.prototype.CHOICES_ONOFF = [
-	{ label: 'OFF', id: '0' },
-	{ label: 'ON', id: '1'}
-]
 
 // Return config fields for web config
 instance.prototype.config_fields = function () {
@@ -169,6 +210,12 @@ instance.prototype.config_fields = function () {
 			width: 12,
 			default: '192.168.254.254',
 			regex: self.REGEX_IP
+		},
+		{
+			type: 'textinput',
+			id: 'password',
+			label: 'Admin or User Password',
+			width: 8
 		}
 	]
 };
@@ -263,28 +310,98 @@ instance.prototype.feedback = function (feedback, bank) {
 	return {}
 }
 
+instance.prototype.init_variables = function () {
+	var self = this;
+	var variables = [];
+
+	var recordStatus = 'Updating';
+	var timeRemain = '00:00';
+
+	variables.push({
+		label: 'Current recording status',
+		name:  'recordStatus'
+	});
+	self.setVariable('recordStatus', recordStatus);
+
+	variables.push({
+		label: 'Time remaining on recording hh:mm',
+		name:  'timeRemain'
+	});
+	self.setVariable('timeRemain', timeRemain);
+
+	self.setVariableDefinitions(variables);
+}
+
 instance.prototype.actions = function(system) {
 	var self = this;
 	var actions = {
-		'start_rec': {
-			label: 'Start recording',
+		'recall_ps_input': {
+			label: 'Recall a saved input preset',
 			options: [{
-					label: 'start record',
-					id: 'start_rec',
+					label: 'input preset id',
+					id: 'ps_type',
+					choices: self.CHOICES_PRESET,
+					default: '2',
+			}, {
+				type: 'textinput',
+				label: 'input preset',
+				id: 'preset',
+				regex: self.REGEX_NUMBER
 			}]
 		},
-		'stop_rec': {
-			label: 'Stop recording',
+		'recall_ps_stream': {
+			label: 'Recall a saved stream preset',
 			options: [{
-					label: 'stop record',
-					id: 'stop_rec',
+					label: 'stream preset id',
+					id: 'ps_type',
+					choices: self.CHOICES_PRESET,
+					default: '3',
+			}, {
+				type: 'textinput',
+				label: 'stream preset',
+				id: 'preset',
+				regex: self.REGEX_NUMBER
 			}]
 		},
-		'pause_rec': {
-			label: 'Pause recording',
+		'recall_ps_encoder': {
+			label: 'Recall a saved encoder preset',
 			options: [{
-					label: 'pause record',
-					id: 'pause_rec',
+					label: 'encoder preset id',
+					id: 'ps_type',
+					choices: self.CHOICES_PRESET,
+					default: '4',
+			}, {
+				type: 'dropdown',
+				label: 'output channel',
+				id: 'channel',
+				choices: self.CHOICES_CHANNEL,
+			}, {
+				type: 'textinput',
+				label: 'encoder preset',
+				id: 'preset',
+				regex: self.REGEX_NUMBER
+			}]
+		},
+		'record': {
+			label: 'Stop/Record/Pause',
+			options: [{
+					type: 'dropdown',
+					label: 'Action',
+					id: 'record_action',
+					choices: self.CHOICES_RECORD,
+					default: '0',
+			}]
+		},
+		'extend_rec': {
+			label: 'Extend recording',
+			options: [{
+					label: 'Scheduled recordings only',
+					id: 'extend_rec',
+			}, {
+				type: 'textinput',
+				label: 'Duration in mins (0 to 60)',
+				id: 'duration',
+				regex: self.REGEX_NUMBER
 			}]
 		},
 		'mark_rec': {
@@ -294,18 +411,14 @@ instance.prototype.actions = function(system) {
 					id: 'mark_rec',
 			}]
 		},
-		'rtmp_off': {
-			label: 'RTMP Off',
+		'rtmp_stream': {
+			label: 'RTMP Push Stream On/Off',
 			options: [{
-					label: 'rtmp off',
-					id: 'rtmp_off',
-			}]
-		},
-		'rtmp_on': {
-			label: 'RTMP On',
-			options: [{
-					label: 'rtmp on',
-					id: 'rtmp_on',
+					type: 'dropdown',
+					label: 'Action',
+					id: 'stream_action',
+					choices: self.CHOICES_ONOFF,
+					default: '0',
 			}]
 		}
 	};
@@ -321,29 +434,34 @@ instance.prototype.action = function(action) {
 	var cmd;
 
 	switch (id) {
-		case 'start_rec':
-			cmd = "\x1BY1RCDR";
+		case 'recall_ps_input':
+			cmd = opt.ps_type+"*"+opt.preset+".";
 			break;
 
-		case 'stop_rec':
-			cmd = "\x1BY0RCDR";
+		case 'recall_ps_stream':
+			cmd = opt.ps_type+"*1*"+opt.preset+".";
 			break;
 
-		case 'pause_rec':
-			cmd = "\x1BY2RCDR";
+		case 'recall_ps_encoder':
+			cmd = opt.ps_type+"*"+opt.channel+"*"+opt.preset+".";
+			break;
+
+		case 'record':
+			cmd = "\x1BY"+opt.record_action+"RCDR";
+			break;
+
+		case 'extend_rec':
+			cmd = "\x1BE"+opt.duration+"RCDR";
 			break;
 
 		case 'mark_rec':
 			cmd = "\x1BBRCDR";
 			break;
 
-		case 'rtmp_off':
-			cmd = "\x1BE1*0RTMP";
+		case 'rtmp_stream':
+			cmd = "\x1BE1*"+opt.stream_action+"RTMP";
 			break;
 
-		case 'rtmp_on':
-			cmd = "\x1BE1*1RTMP";
-			break;
 	}
 
 	if (cmd !== undefined) {
